@@ -17,6 +17,7 @@
             height: 100vh;
             overflow: hidden;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            touch-action: manipulation;
         }
 
         /* Glassmorphism styling for control panel */
@@ -85,6 +86,11 @@
             transform: scale(1.2);
         }
 
+        /* UI elements fade animation */
+        .ui-fade {
+            transition: opacity 0.3s ease-in-out;
+        }
+
         /* Hide scrollbars for slick look */
         ::-webkit-scrollbar {
             width: 0px;
@@ -98,7 +104,7 @@
     <div id="color-canvas" class="absolute inset-0"></div>
 
     <!-- UI Overlay Panel -->
-    <div id="ui-panel" class="absolute top-6 left-6 z-10 w-80 max-w-[calc(100vw-3rem)] glass-panel rounded-2xl p-5 text-sm transition-all duration-300 transform ease-in-out">
+    <div id="ui-panel" class="ui-fade absolute top-6 left-6 z-10 w-80 max-w-[calc(100vw-3rem)] glass-panel rounded-2xl p-5 text-sm transform ease-in-out">
         <!-- Panel Header -->
         <div class="flex justify-between items-center mb-4">
             <div class="flex items-center space-x-2">
@@ -174,17 +180,17 @@
             </div>
 
             <!-- Shortcut Hint inside panel -->
-            <div class="pt-2 border-t border-white/10 text-[11px] text-gray-400 flex items-center space-x-1.5 justify-center">
-                <kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20 font-mono text-[10px] text-gray-200">S</kbd>
-                <span>キーで画面全体のUI非表示 / 表示切替</span>
+            <div class="pt-2 border-t border-white/10 text-[11px] text-gray-400 flex items-center space-x-1.5 justify-center text-center">
+                <i class="ph ph-hand-tap text-sm text-indigo-300"></i>
+                <span>画面長押し または <kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20 font-mono text-[10px] text-gray-200">S</kbd> キーでUI非表示</span>
             </div>
         </div>
     </div>
 
     <!-- Instructions Notice when inactive -->
-    <div id="welcome-message" class="ui-element absolute bottom-8 left-1/2 transform -translate-x-1/2 glass-panel px-6 py-3 rounded-full text-xs text-gray-300 pointer-events-none transition-opacity duration-500 flex items-center space-x-2">
+    <div id="welcome-message" class="ui-fade absolute bottom-8 left-1/2 transform -translate-x-1/2 glass-panel px-6 py-3 rounded-full text-xs text-gray-300 pointer-events-none transition-opacity duration-300 flex items-center space-x-2">
         <i class="ph ph-info text-base text-indigo-400"></i>
-        <span>マイクをONにすると音に合わせて色が変化します（<kbd class="px-1 bg-white/10 rounded font-mono">S</kbd>キーでUI隠し）</span>
+        <span>マイクをONにすると音に合わせて色が変化（画面長押し/SキーでUI非表示）</span>
     </div>
 
     <script>
@@ -301,27 +307,67 @@
             updateColorPickers(count);
         });
 
-        // Toggle Full UI Visibility using 'S' key
+        // --- UI Visibility Toggle Logic (Key & Long-press) ---
+        function setUiVisibility(visible) {
+            isUiFullyVisible = visible;
+            if (isUiFullyVisible) {
+                uiPanel.style.opacity = '1';
+                uiPanel.style.pointerEvents = 'auto';
+                welcomeMessage.style.opacity = isListening ? '0' : '1';
+            } else {
+                uiPanel.style.opacity = '0';
+                uiPanel.style.pointerEvents = 'none';
+                welcomeMessage.style.opacity = '0';
+            }
+        }
+
+        function toggleUiVisibility() {
+            setUiVisibility(!isUiFullyVisible);
+        }
+
+        // 1. Keyboard 'S' Key Toggle
         window.addEventListener('keydown', (e) => {
-            // Ignore key events when typing into input fields
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
                 return;
             }
-
             if (e.key === 's' || e.key === 'S') {
-                isUiFullyVisible = !isUiFullyVisible;
-                
-                if (isUiFullyVisible) {
-                    uiPanel.style.opacity = '1';
-                    uiPanel.style.pointerEvents = 'auto';
-                    welcomeMessage.style.opacity = isListening ? '0' : '1';
-                } else {
-                    uiPanel.style.opacity = '0';
-                    uiPanel.style.pointerEvents = 'none';
-                    welcomeMessage.style.opacity = '0';
-                }
+                toggleUiVisibility();
             }
         });
+
+        // 2. Long Press (Touch & Mouse Hold) Logic
+        let longPressTimer = null;
+        const LONG_PRESS_DURATION = 500; // milliseconds
+
+        function startLongPress(e) {
+            // Prevent long press trigger if interacting inside the UI panel
+            if (uiPanel.contains(e.target)) {
+                return;
+            }
+            
+            cancelLongPress();
+            longPressTimer = setTimeout(() => {
+                toggleUiVisibility();
+                cancelLongPress();
+            }, LONG_PRESS_DURATION);
+        }
+
+        function cancelLongPress() {
+            if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }
+
+        // Mouse Events
+        window.addEventListener('mousedown', startLongPress);
+        window.addEventListener('mouseup', cancelLongPress);
+        window.addEventListener('mousemove', cancelLongPress);
+
+        // Touch Events
+        window.addEventListener('touchstart', startLongPress, { passive: true });
+        window.addEventListener('touchend', cancelLongPress);
+        window.addEventListener('touchmove', cancelLongPress);
 
         // Start Microphone Audio Stream
         async function startMicrophone() {
@@ -376,7 +422,8 @@
         }
 
         // Toggle Microphone State
-        micToggleBtn.addEventListener('click', () => {
+        micToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             if (isListening) {
                 stopMicrophone();
             } else {
@@ -395,7 +442,8 @@
 
         // Collapse / Expand Control Panel UI
         let isPanelOpen = true;
-        togglePanelBtn.addEventListener('click', () => {
+        togglePanelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             isPanelOpen = !isPanelOpen;
             if (isPanelOpen) {
                 panelContent.classList.remove('hidden');
